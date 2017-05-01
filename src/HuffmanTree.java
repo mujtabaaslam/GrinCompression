@@ -4,99 +4,145 @@ import java.util.Map;
 import java.util.PriorityQueue;
 
 public class HuffmanTree {
+    public class Node implements Comparable<Node> {
+        private short val;
+        private int freq;
+        private Node left;
+        private Node right;
 
-	public class Node {
-		private short val;
-		private int freq;
-		private Node left;
-		private Node right;
+        public Node(short val, int freq) {
+            this.val = val;
+            this.freq = freq;
+            left = null;
+            right = null;
+        }
 
-		public Node(short val, int freq) {
-			this.val = val;
-			this.freq = freq;
-			left = null;
-			right = null;
-		}
+        public Node(short val) {
+            this.val = val;
+            left = null;
+            right = null;
+        }
 
-		public Node(Node left, Node right) {
-			this.freq = left.freq + right.freq;
-			this.left = left;
-			this.right = right;
-		}
-	}
+        public Node(Node left, Node right) {
+            this.freq = left.freq + right.freq;
+            this.left = left;
+            this.right = right;
+        }
 
-	public Node root;
+        public int compareTo(Node n) {
+            if (this.freq < n.freq) {
+                return -1;
+            } else if (this.freq > n.freq) {
+                return 1;
+            } else {
+                return 0;
+            }
+        }
 
-	public HuffmanTree(Map<Short, Integer> m) {
-		PriorityQueue<Node> queue = new PriorityQueue<>();
-		Iterator<Short> iter = m.keySet().iterator();
-		while (iter.hasNext()) {
-			short key = iter.next();
-			queue.add(new Node(key, m.get(key)));
-		}
-		queue.add(new Node((short) 256, 1));
+    }
 
-		while (queue.size() > 1) {
-			root = new Node(queue.poll(), queue.poll());
-			queue.add(root);
-		}
-	}
+    private Node root;
+    private Map<Short, String> encodes;
 
-	public HuffmanTree(BitInputStream in) {
-		root = HuffmanTreeH(in, root);
-	}
+    public HuffmanTree(Map<Short, Integer> m) {
+        PriorityQueue<Node> queue = new PriorityQueue<>();
+        Iterator<Short> iter = m.keySet().iterator();
+        while (iter.hasNext()) {
+            short key = iter.next();
+            queue.add(new Node(key, m.get(key)));
+        }
+        queue.add(new Node((short) 256, 1));
 
-	public Node HuffmanTreeH(BitInputStream in, Node cur) {
-		if (in.readBit() == 1) {
-			cur = new Node(HuffmanTreeH(in, cur.left), HuffmanTreeH(in, cur.right));
-		} else if (in.readBit() == 0) {
-			cur = new Node((short) in.readBits(9), (Integer) null);
-		}
-		return cur;
-	}
+        while (queue.size() > 1) {
+            root = new Node(queue.poll(), queue.poll());
+            queue.add(root);
+        }
+        this.encodes = new HashMap<Short, String>();
+        buildEncodes(this.root, "");
+    }
 
-	public void serialize(BitOutputStream out) {
-		serializeH(out, root);
-	}
+    public HuffmanTree(BitInputStream in) {
+        root = HuffmanTreeH(in);
+    }
 
-	public void serializeH(BitOutputStream out, Node cur) {
-		if (cur.left == null && cur.right == null) {
-			out.writeBit(0);
-			out.writeBits((int) cur.val, 9);
-		} else {
-			out.writeBit(1);
-			serializeH(out, cur.left);
-			serializeH(out, cur.right);
-		}
-	}
-	
-	public void encode(BitInputStream in, BitOutputStream out){
-		Map<Short, Integer> m = new HashMap<>();
-		while (in.hasBits()){
-			int temp = in.readBits(8);
-			if(m.containsKey(temp)){
-				m.put((short)temp, m.get(temp) + 1);
-			}
-			else{
-				m.put((short)temp, 1);
-			}
-		}
-		
-		HuffmanTree tree = new HuffmanTree(m);
-		tree.serialize(out);
-		
-	}
+    public Node HuffmanTreeH(BitInputStream in) {
+        int temp = in.readBit();
+        if (temp == 1) {
+            return new Node(HuffmanTreeH(in), HuffmanTreeH(in));
+        } else if (temp == 0) {
+            return new Node((short) in.readBits(9));
+        } else {
+            throw new IllegalArgumentException();
+        }
+    }
 
+    public void serialize(BitOutputStream out) {
+        serializeH(out, root);
+    }
+
+    public void serializeH(BitOutputStream out, Node cur) {
+        if (cur.left == null && cur.right == null) {
+            out.writeBit(0);
+            out.writeBits((int) cur.val, 9);
+        } else {
+            out.writeBit(1);
+            serializeH(out, cur.left);
+            serializeH(out, cur.right);
+        }
+    }
+
+    private void buildEncodes(Node node, String str) {
+        if (node.left == null && node.right == null) {
+            encodes.put(node.val, str);
+            str = "";
+        }
+        if (node.left != null) {
+            buildEncodes(node.left, str + "0");
+        }
+        if (node.right != null) {
+            buildEncodes(node.right, str + "1");
+        }
+    }
+
+    public void encode(BitInputStream in, BitOutputStream out) {
+        short value = (short) in.readBits(8);
+        while (value != -1) {
+            String treePath = this.encodes.get((short) value);
+            for (int i = 0; i < treePath.length(); i++) {
+                if (treePath.charAt(i) == '1') {
+                    out.writeBit(1);
+                } else if (treePath.charAt(i) == '0') {
+                    out.writeBit(0);
+                }
+            }
+            value = (short) in.readBits(8);
+        }
+        String eof = encodes.get((short) 256);
+        for (int i = 0; i < eof.length(); i++) {
+            if (eof.charAt(i) == '1') {
+                out.writeBit(1);
+            } else if (eof.charAt(i) == '0') {
+                out.writeBit(0);
+            }
+        }
+    }
+
+    public void decode(BitInputStream in, BitOutputStream out) {
+        while (in.hasBits()) {
+            Node node = this.root;
+            while (node.left != null || node.right != null) {
+                if (in.readBit() == 0) {
+                    node = node.left;
+                } else {
+                    node = node.right;
+                }
+            }
+            Short sh = (short) (int) node.val;
+            if (sh == 256) {
+                return;
+            } else {
+                out.writeBits(sh, 8);
+            }
+        }
+    }
 }
-
-// void serialize(BitOutputStream out): writes the HuffmanTree to the given file
-// as a stream of bits in a serialized format (see “Serializing Huffman Trees”
-// below).
-// void encode(BitInputStream in, BitOutputStream out): Encodes the file given
-// as a stream of bits into a compressed format using this Huffman tree. The
-// encoded values are written, bit-by-bit to the given BitOuputStream.
-// void decode(BitInputStream in, BitOutputStream out): Decodes a stream of
-// huffman codes from a file given as a stream of bits into their uncompressed
-// form, saving the results to the given output stream. Note that the EOF
-// character is not written to out because it is not a valid 8-bit chunk (it is
-// 9 bits).
